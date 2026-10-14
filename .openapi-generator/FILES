@@ -1,0 +1,11 @@
+.openapi-generator-ignore
+README.md
+pom.xml
+src/main/java/com/nttdata/bank_account_service/api/ApiUtil.java
+src/main/java/com/nttdata/bank_account_service/api/BankAccountsApi.java
+src/main/java/com/nttdata/bank_account_service/dto/BankAccountRequest.java
+src/main/java/com/nttdata/bank_account_service/dto/BankAccountResponse.java
+src/main/java/com/nttdata/bank_account_service/dto/CustomerDTO.java
+src/main/java/com/nttdata/bank_account_service/dto/TransactionRequest.java
+src/main/java/com/nttdata/bank_account_service/dto/TransactionResponse.java
+src/main/java/com/nttdata/bank_account_service/dto/TransferRequest.java

@@ -1,0 +1,238 @@
+openapi: 3.0.3
+info:
+  title: Bank Account Service API
+  version: 1.0.0
+  description: API para la gestión de cuentas bancarias (Pasivos)
+paths:
+  /bank-accounts:
+    get:
+      summary: Obtener todas las cuentas
+      operationId: findAll
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BankAccountResponse'
+    post:
+      summary: Crear una cuenta bancaria
+      operationId: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankAccountRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountResponse'
+  /bank-accounts/{id}:
+    get:
+      summary: Obtener cuenta por ID
+      operationId: findById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountResponse'
+    put:
+      summary: Actualizar una cuenta
+      operationId: update
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankAccountRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountResponse'
+    delete:
+      summary: Eliminar una cuenta
+      operationId: delete
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+  /bank-accounts/{accountId}/transactions:
+    post:
+      summary: Registrar un depósito o retiro en la cuenta
+      operationId: createTransaction
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionRequest'
+      responses:
+        '201':
+          description: Transacción exitosa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+    get:
+      summary: Obtener el historial de movimientos de la cuenta
+      operationId: getTransactionsByAccount
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+  /bank-accounts/transfers:
+    post:
+      summary: Realizar una transferencia entre cuentas
+      operationId: createTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '201':
+          description: Transferencia exitosa
+components:
+  schemas:
+    BankAccountRequest:
+      type: object
+      required:
+        - customerId
+        - accountType
+      properties:
+        customerId:
+          type: string
+        accountType:
+          type: string
+          description: "SAVINGS, CURRENT, FIXED_TERM, VIP, PYME"
+        balance:
+          type: number
+          format: double
+        maintenanceFee:
+          type: number
+          format: double
+        maxMovements:
+          type: integer
+    BankAccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        customerId:
+          type: string
+        accountType:
+          type: string
+        balance:
+          type: number
+          format: double
+        maintenanceFee:
+          type: number
+          format: double
+        maxMovements:
+          type: integer
+    TransactionRequest:
+      type: object
+      required:
+        - transactionType
+        - amount
+      properties:
+        transactionType:
+          type: string
+          description: "DEPOSIT, WITHDRAWAL"
+        amount:
+          type: number
+          format: double
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        transactionType:
+          type: string
+        amount:
+          type: number
+          format: double
+        fee:
+          type: number
+          format: double
+          description: "Comisión cobrada si se superó el límite de movimientos gratuitos"
+        transactionDate:
+          type: string
+          format: date-time
+    TransferRequest:
+      type: object
+      required:
+        - sourceAccountId
+        - targetAccountId
+        - amount
+      properties:
+        sourceAccountId:
+          type: string
+          description: "ID de la cuenta origen (la que envía el dinero)"
+        targetAccountId:
+          type: string
+          description: "ID de la cuenta destino (la que recibe el dinero)"
+        amount:
+          type: number
+          format: double
+    CustomerDTO:
+      type: object
+      properties:
+        id:
+          type: string
+        documentNumber:
+          type: string
+        name:
+          type: string
+        customerType:
+          type: string
+        profile:
+          type: string
