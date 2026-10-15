@@ -138,6 +138,90 @@ paths:
       responses:
         '201':
           description: Transferencia exitosa
+  # CRUD completo de la entidad Transaction (FindAll / FindById / Update / Delete)
+  /bank-accounts/transactions:
+    get:
+      summary: Obtener todos los movimientos registrados en el sistema
+      operationId: findAllTransactions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+  /bank-accounts/transactions/{transactionId}:
+    get:
+      summary: Obtener un movimiento por su ID
+      operationId: findTransactionById
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+    put:
+      summary: Corregir un movimiento registrado
+      operationId: updateTransaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+    delete:
+      summary: Eliminar un movimiento registrado
+      operationId: deleteTransaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+  # Consulta de saldos disponibles (Parte I: "consultar los saldos disponibles en sus
+  # productos como: cuentas bancarias y tarjetas de crédito")
+  /bank-accounts/{id}/balance:
+    get:
+      summary: Obtener el saldo disponible de una cuenta bancaria
+      operationId: getAvailableBalance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableBalanceResponse'
 components:
   schemas:
     BankAccountRequest:
@@ -157,8 +241,48 @@ components:
         maintenanceFee:
           type: number
           format: double
+          description: >-
+            Comisión de mantenimiento. Regla de negocio: obligatoria y mayor que cero en
+            cuentas corrientes; se fuerza a 0 en ahorro y a plazo fijo.
         maxMovements:
           type: integer
+          description: >-
+            Movimientos mensuales libres de comisión. Obligatorio en cuentas de ahorro;
+            se fuerza a null (sin límite) en cuentas corrientes.
+        fixedTermWithdrawalDay:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: >-
+            Día de cada mes en el que una cuenta a plazo fijo admite su único movimiento
+            de retiro o depósito (por defecto 1).
+        holders:
+          type: array
+          description: "Titulares de la cuenta. Obligatorio al menos uno en cuentas empresariales."
+          items:
+            type: string
+        signatories:
+          type: array
+          description: "Firmantes autorizados. Puede ser una lista vacía (cero firmantes)."
+          items:
+            type: string
+    AvailableBalanceResponse:
+      type: object
+      description: "Saldo disponible actual de una cuenta bancaria (Parte I)."
+      properties:
+        accountId:
+          type: string
+          description: "Identificador de la cuenta bancaria."
+        customerId:
+          type: string
+          description: "Identificador del cliente titular de la cuenta."
+        accountType:
+          type: string
+          description: "SAVINGS, CURRENT, FIXED_TERM, VIP, PYME"
+        balance:
+          type: number
+          format: double
+          description: "Saldo disponible actual de la cuenta."
     BankAccountResponse:
       type: object
       properties:
@@ -174,8 +298,21 @@ components:
         maintenanceFee:
           type: number
           format: double
+          description: "Comisión de mantenimiento aplicada al producto."
         maxMovements:
           type: integer
+          description: "Movimientos mensuales libres de comisión; null = sin límite."
+        fixedTermWithdrawalDay:
+          type: integer
+          description: "Día del mes habilitado para mover una cuenta a plazo fijo."
+        holders:
+          type: array
+          items:
+            type: string
+        signatories:
+          type: array
+          items:
+            type: string
     TransactionRequest:
       type: object
       required:

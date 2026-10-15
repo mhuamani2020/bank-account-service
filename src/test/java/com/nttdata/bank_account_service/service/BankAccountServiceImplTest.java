@@ -2,6 +2,7 @@ package com.nttdata.bank_account_service.service;
 
 import com.nttdata.bank_account_service.client.CreditClient;
 import com.nttdata.bank_account_service.client.CustomerClient;
+import com.nttdata.bank_account_service.dto.AvailableBalanceResponse;
 import com.nttdata.bank_account_service.dto.BankAccountRequest;
 import com.nttdata.bank_account_service.dto.BankAccountResponse;
 import com.nttdata.bank_account_service.dto.CustomerDTO;
@@ -19,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -105,6 +108,32 @@ class BankAccountServiceImplTest {
                 .verifyComplete();
 
         verify(bankAccountRepository, times(1)).findById("missing-id");
+    }
+
+    // --- CONSULTA DE SALDO DISPONIBLE ---
+
+    @Test
+    @DisplayName("getBalance: Debe devolver el saldo disponible cuando la cuenta existe")
+    void getBalance_whenExists_shouldReturnAvailableBalance() {
+        when(bankAccountRepository.findById("acc-001")).thenReturn(Mono.just(sampleAccount));
+
+        StepVerifier.create(bankAccountService.getBalance("acc-001"))
+                .expectNextMatches(balance -> "acc-001".equals(balance.getAccountId())
+                        && "cust-personal-01".equals(balance.getCustomerId())
+                        && "SAVINGS".equals(balance.getAccountType())
+                        && Double.valueOf(300.0).equals(balance.getBalance()))
+                .verifyComplete();
+
+        verify(bankAccountRepository, times(1)).findById("acc-001");
+    }
+
+    @Test
+    @DisplayName("getBalance: Debe completar vacío cuando la cuenta no existe")
+    void getBalance_whenNotFound_shouldReturnEmpty() {
+        when(bankAccountRepository.findById("missing-id")).thenReturn(Mono.empty());
+
+        StepVerifier.create(bankAccountService.getBalance("missing-id"))
+                .verifyComplete();
     }
 
     // --- CREATE: VALIDACIONES DE CLIENTE Y REGLAS DE NEGOCIO ---
@@ -194,18 +223,22 @@ class BankAccountServiceImplTest {
     }
 
     @Test
-    @DisplayName("create: Cliente BUSINESS puede abrir cuenta CURRENT")
+    @DisplayName("create: Cliente BUSINESS puede abrir cuenta CURRENT si indica comision y al menos un titular")
     void create_businessCustomer_currentAccount_success() {
         BankAccountRequest request = new BankAccountRequest();
         request.setCustomerId("cust-business-01");
         request.setAccountType("CURRENT");
         request.setBalance(1500.0);
+        request.setMaintenanceFee(30.0);
+        request.setHolders(List.of("Empresa Andes SAC"));
 
         BankAccount currentAccount = BankAccount.builder()
                 .id("acc-biz-01")
                 .customerId("cust-business-01")
                 .accountType(AccountType.CURRENT)
                 .balance(1500.0)
+                .maintenanceFee(30.0)
+                .holders(List.of("Empresa Andes SAC"))
                 .build();
 
         when(customerClient.getCustomerById("cust-business-01")).thenReturn(Mono.just(businessCustomer));
@@ -218,6 +251,154 @@ class BankAccountServiceImplTest {
                 .verifyComplete();
 
         verify(bankAccountRepository, times(1)).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("create: Cliente BUSINESS sin titulares lanza error de negocio")
+    void create_businessCustomer_withoutHolders_shouldFail() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-business-01");
+        request.setAccountType("CURRENT");
+        request.setBalance(1500.0);
+        request.setMaintenanceFee(30.0);
+
+        when(customerClient.getCustomerById("cust-business-01")).thenReturn(Mono.just(businessCustomer));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("al menos un titular"))
+                .verify();
+
+        verify(bankAccountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("create: Cuenta CORRIENTE sin comision de mantenimiento lanza error de negocio")
+    void create_currentAccountWithoutMaintenanceFee_shouldFail() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("CURRENT");
+        request.setBalance(800.0);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "CURRENT"))
+                .thenReturn(Mono.just(0L));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("comisión de mantenimiento mayor que cero"))
+                .verify();
+
+        verify(bankAccountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("create: Cuenta de AHORRO sin limite mensual de movimientos lanza error de negocio")
+    void create_savingsWithoutMaxMovements_shouldFail() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("SAVINGS");
+        request.setBalance(100.0);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
+                .thenReturn(Mono.just(0L));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("límite máximo de movimientos mensuales"))
+                .verify();
+
+        verify(bankAccountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("create: Cuenta de AHORRO siempre queda libre de comision de mantenimiento")
+    void create_savings_freesMaintenanceFeeAndKeepsMovementLimit() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("SAVINGS");
+        request.setBalance(100.0);
+        request.setMaintenanceFee(99.0); // Intento de comisión: se debe ignorar
+        request.setMaxMovements(10);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
+                .thenReturn(Mono.just(0L));
+        when(bankAccountRepository.save(any(BankAccount.class)))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectNextMatches(res -> Double.valueOf(0.0).equals(res.getMaintenanceFee())
+                        && Integer.valueOf(10).equals(res.getMaxMovements()))
+                .verifyComplete();
+
+        verify(bankAccountRepository).save(argThat(acc ->
+                Double.valueOf(0.0).equals(acc.getMaintenanceFee())
+                        && Integer.valueOf(10).equals(acc.getMaxMovements())));
+    }
+
+    @Test
+    @DisplayName("create: Cuenta CORRIENTE se registra sin limite de movimientos mensuales")
+    void create_currentAccount_forcesNoMovementLimit() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("CURRENT");
+        request.setBalance(800.0);
+        request.setMaintenanceFee(25.0);
+        request.setMaxMovements(50); // Se debe descartar: la corriente no tiene límite
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "CURRENT"))
+                .thenReturn(Mono.just(0L));
+        when(bankAccountRepository.save(any(BankAccount.class)))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectNextMatches(res -> res.getMaxMovements() == null
+                        && Double.valueOf(25.0).equals(res.getMaintenanceFee()))
+                .verifyComplete();
+
+        verify(bankAccountRepository).save(argThat(acc -> acc.getMaxMovements() == null));
+    }
+
+    @Test
+    @DisplayName("create: Cuenta a PLAZO FIJO queda libre de comision y con dia habilitado")
+    void create_fixedTermAccount_isFreeOfFeeAndHasWithdrawalDay() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("FIXED_TERM");
+        request.setBalance(5000.0);
+        request.setMaintenanceFee(40.0); // Se debe ignorar
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "FIXED_TERM"))
+                .thenReturn(Mono.just(0L));
+        when(bankAccountRepository.save(any(BankAccount.class)))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectNextMatches(res -> Double.valueOf(0.0).equals(res.getMaintenanceFee())
+                        && res.getFixedTermWithdrawalDay() != null
+                        && res.getFixedTermWithdrawalDay() >= 1
+                        && res.getFixedTermWithdrawalDay() <= 31)
+                .verifyComplete();
+
+        verify(bankAccountRepository).save(argThat(acc ->
+                Double.valueOf(0.0).equals(acc.getMaintenanceFee())
+                        && Integer.valueOf(1).equals(acc.getFixedTermWithdrawalDay())));
     }
 
     @Test
@@ -283,13 +464,17 @@ class BankAccountServiceImplTest {
         updateReq.setMaxMovements(30);
 
         when(bankAccountRepository.findById("acc-001")).thenReturn(Mono.just(sampleAccount));
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
         when(bankAccountRepository.save(any(BankAccount.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
         Mono<BankAccountResponse> result = bankAccountService.update("acc-001", updateReq);
 
         StepVerifier.create(result)
                 .expectNextMatches(res -> Double.valueOf(850.0).equals(res.getBalance())
-                        && "CURRENT".equalsIgnoreCase(res.getAccountType()))
+                        && "CURRENT".equalsIgnoreCase(res.getAccountType())
+                        // Regla de producto aplicada también en la actualización:
+                        // la cuenta corriente no admite límite de movimientos
+                        && res.getMaxMovements() == null)
                 .verifyComplete();
 
         verify(bankAccountRepository, times(1)).findById("acc-001");

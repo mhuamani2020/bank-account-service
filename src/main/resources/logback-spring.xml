@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Configuración de trazas con Logback
+  (Parte I: "Manejo de trazas con Logback y utilizar el nivel del log adecuado").
+
+  Este fichero src/main/resources/logback-spring.xml lo carga Logback en el arranque y
+  sustituye a la configuración por defecto de Spring Boot. Permite:
+
+    1. Definir el patrón de la traza: fecha, nivel, aplicación, hilo, logger y mensaje.
+    2. Fijar un nivel adecuado por capa:
+         - INFO  en la raíz: traza normal de funcionamiento del microservicio.
+         - DEBUG en el código de negocio (com.nttdata): detalle de las operaciones.
+         - WARN/INFO en frameworks de terceros: solo avisos relevantes, para no
+           inundar la traza con ruido de arranque.
+       Estos niveles pueden sobreescribirse por entorno con la propiedad estándar
+       logging.level.<paquete> en application.yml o en el Config Server, sin tocar código.
+    3. El nivel de cada mensaje lo decide quien registra: log.info para el flujo normal,
+       log.warn para situaciones recuperables (reglas de negocio, fallbacks de resiliencia
+       y circuit breakers) y log.error para fallos no recuperables.
+
+  Nota: se usa únicamente el appender de consola, de forma que la captura de la trazas
+  la realice el entorno de despliegue (Docker, shell o CI), tal como se espera de un
+  microservicio reactivo sin interfaz gráfica.
+-->
+<configuration>
+
+    <!-- Nombre de la aplicación, tomado de la propiedad spring.application.name -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="application"/>
+
+    <!-- Nivel por defecto de la raíz -->
+    <property name="ROOT_LEVEL" value="INFO"/>
+
+    <property name="CONSOLE_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [${APP_NAME}] [%thread] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- Paquete propio de este microservicio: detalle de la lógica de negocio -->
+    <logger name="com.nttdata" level="DEBUG"/>
+
+    <!-- Marco y dependencias: solo información relevante o avisos -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.springframework.cloud" level="WARN"/>
+    <logger name="com.netflix.eureka" level="WARN"/>
+    <logger name="org.mongodb.driver" level="WARN"/>
+    <logger name="io.github.resilience4j" level="INFO"/>
+
+    <root level="${ROOT_LEVEL}">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

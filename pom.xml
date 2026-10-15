@@ -82,6 +82,23 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
+
+        <!-- AOP: imprescindible para que @CircuitBreaker / @TimeLimiter se apliquen -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <!-- Observabilidad: /actuator/circuitbreakers, health y métricas de los CB -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Estándar de resiliencia compartido: fallbacks + manejo de errores común -->
+        <dependency>
+            <groupId>com.nttdata</groupId>
+            <artifactId>bank-resilience-commons</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>

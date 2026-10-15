@@ -3,3 +3,53 @@ spring:
     name: bank-account-service
   config:
     import: "optional:configserver:http://localhost:8888"
+
+# ==========================================================================
+# Propiedades externalizadas (Parte I: "No deben tener configuraciones en el código")
+# URLs base que consumen CustomerClientAdapter y CreditClientAdapter.
+# La ausencia de valores por defecto en @Value es deliberada: la configuración
+# vive SOLO aquí y en bank-config-repo, nunca dentro de la clase Java.
+# ==========================================================================
+app:
+  urls:
+    customer-service: "http://localhost:8081/customers/"
+    credit-service: "http://localhost:8083/credits/"
+
+# ==========================================================================
+# Estándar de resiliencia (circuit breakers) — bank-resilience-commons
+# Instancias: customerServiceCB (-> customer-service), creditServiceCB (-> credit-service)
+# Regla obligatoria: minimumNumberOfCalls <= slidingWindowSize
+# NOTA: si el config-server está disponible, sus valores tienen precedencia
+# sobre este archivo (ver bank-config-repo/bank-account-service.yml).
+# ==========================================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      customerServiceCB:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+      creditServiceCB:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+  timelimiter:
+    instances:
+      customerServiceCB:
+        timeoutDuration: 2s
+        cancelRunningFuture: true
+      creditServiceCB:
+        timeoutDuration: 2s
+        cancelRunningFuture: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,circuitbreakerevents

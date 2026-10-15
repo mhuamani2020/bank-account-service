@@ -1,13 +1,14 @@
 package com.nttdata.bank_account_service.controller;
 
+import com.nttdata.bank_account_service.dto.AvailableBalanceResponse;
 import com.nttdata.bank_account_service.dto.BankAccountRequest;
 import com.nttdata.bank_account_service.dto.BankAccountResponse;
 import com.nttdata.bank_account_service.dto.TransactionRequest;
 import com.nttdata.bank_account_service.dto.TransactionResponse;
 import com.nttdata.bank_account_service.dto.TransferRequest;
-import com.nttdata.bank_account_service.exception.GlobalExceptionHandler;
 import com.nttdata.bank_account_service.service.BankAccountService;
 import com.nttdata.bank_account_service.service.TransactionService;
+import com.nttdata.commons.resilience.error.StandardApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(controllers = BankAccountController.class)
-@Import(GlobalExceptionHandler.class)
+@Import(StandardApiExceptionHandler.class)
 class BankAccountControllerTest {
 
     @Autowired
@@ -84,6 +85,38 @@ class BankAccountControllerTest {
                 .expectStatus().isOk()
                 .expectBody(BankAccountResponse.class)
                 .isEqualTo(sampleResponse);
+    }
+
+    @Test
+    @DisplayName("GET /bank-accounts/{id}/balance: Retorna 200 OK con el saldo disponible")
+    void getAvailableBalance_shouldReturnOk() {
+        AvailableBalanceResponse balance = new AvailableBalanceResponse();
+        balance.setAccountId("acc-100");
+        balance.setCustomerId("cust-01");
+        balance.setAccountType("SAVINGS");
+        balance.setBalance(300.0);
+
+        when(bankAccountService.getBalance("acc-100")).thenReturn(Mono.just(balance));
+
+        webTestClient.get()
+                .uri("/bank-accounts/{id}/balance", "acc-100")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(AvailableBalanceResponse.class)
+                .isEqualTo(balance);
+    }
+
+    @Test
+    @DisplayName("GET /bank-accounts/{id}/balance: Retorna 404 Not Found si la cuenta no existe")
+    void getAvailableBalance_whenNotFound_shouldReturnNotFound() {
+        when(bankAccountService.getBalance("acc-999")).thenReturn(Mono.empty());
+
+        webTestClient.get()
+                .uri("/bank-accounts/{id}/balance", "acc-999")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isNotFound();
     }
 
     @Test
@@ -209,5 +242,93 @@ class BankAccountControllerTest {
                 .bodyValue(transferRequest)
                 .exchange()
                 .expectStatus().isCreated();
+    }
+
+    // --- CRUD COMPLETO DE LA ENTIDAD TRANSACTION ---
+
+    @Test
+    @DisplayName("GET /bank-accounts/transactions: Retorna 200 OK con todos los movimientos (FindAll)")
+    void findAllTransactions_shouldReturnList() {
+        TransactionResponse txResponse = new TransactionResponse();
+        txResponse.setId("tx-500");
+        txResponse.setAccountId("acc-100");
+
+        when(transactionService.findAll()).thenReturn(Flux.just(txResponse));
+
+        webTestClient.get()
+                .uri("/bank-accounts/transactions")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(TransactionResponse.class)
+                .hasSize(1)
+                .contains(txResponse);
+    }
+
+    @Test
+    @DisplayName("GET /bank-accounts/transactions/{transactionId}: Retorna 200 OK cuando existe")
+    void findTransactionById_whenExists_shouldReturnOk() {
+        TransactionResponse txResponse = new TransactionResponse();
+        txResponse.setId("tx-500");
+        txResponse.setAccountId("acc-100");
+
+        when(transactionService.findById("tx-500")).thenReturn(Mono.just(txResponse));
+
+        webTestClient.get()
+                .uri("/bank-accounts/transactions/{transactionId}", "tx-500")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(TransactionResponse.class)
+                .isEqualTo(txResponse);
+    }
+
+    @Test
+    @DisplayName("GET /bank-accounts/transactions/{transactionId}: Retorna 404 Not Found si no existe")
+    void findTransactionById_whenNotFound_shouldReturnNotFound() {
+        when(transactionService.findById("tx-999")).thenReturn(Mono.empty());
+
+        webTestClient.get()
+                .uri("/bank-accounts/transactions/{transactionId}", "tx-999")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    @DisplayName("PUT /bank-accounts/transactions/{transactionId}: Retorna 200 OK al corregir")
+    void updateTransaction_shouldReturnOk() {
+        TransactionRequest txRequest = new TransactionRequest();
+        txRequest.setTransactionType("WITHDRAWAL");
+        txRequest.setAmount(250.0);
+
+        TransactionResponse txResponse = new TransactionResponse();
+        txResponse.setId("tx-500");
+        txResponse.setAccountId("acc-100");
+        txResponse.setTransactionType("WITHDRAWAL");
+        txResponse.setAmount(250.0);
+
+        when(transactionService.update(eq("tx-500"), any(TransactionRequest.class)))
+                .thenReturn(Mono.just(txResponse));
+
+        webTestClient.put()
+                .uri("/bank-accounts/transactions/{transactionId}", "tx-500")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(txRequest)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(TransactionResponse.class)
+                .isEqualTo(txResponse);
+    }
+
+    @Test
+    @DisplayName("DELETE /bank-accounts/transactions/{transactionId}: Retorna 204 No Content")
+    void deleteTransaction_shouldReturnNoContent() {
+        when(transactionService.delete("tx-500")).thenReturn(Mono.empty());
+
+        webTestClient.delete()
+                .uri("/bank-accounts/transactions/{transactionId}", "tx-500")
+                .exchange()
+                .expectStatus().isNoContent();
     }
 }
