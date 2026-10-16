@@ -50,4 +50,33 @@ public interface TransactionRepository extends ReactiveMongoRepository<Transacti
      * @return número de movimientos de la cuenta en el rango indicado
      */
     Mono<Long> countByAccountIdAndTransactionDateBetween(String accountId, LocalDateTime from, LocalDateTime to);
+
+    /**
+     * Movimientos (pagos) realizados con una tarjeta de débito, del más reciente al
+     * más antiguo. Base de la consulta de movimientos de la tarjeta.
+     *
+     * @param debitCardId identificador de la tarjeta de débito
+     * @return flujo con los movimientos de la tarjeta
+     */
+    Flux<Transaction> findByDebitCardIdOrderByTransactionDateDesc(String debitCardId);
+
+    /**
+     * Últimos diez movimientos realizados con una tarjeta de débito, del más reciente
+     * al más antiguo. Base del reporte de la Parte II ("últimos 10 movimientos de la
+     * tarjeta de débito").
+     *
+     * @param debitCardId identificador de la tarjeta de débito
+     * @return flujo con los 10 movimientos más recientes de la tarjeta
+     */
+    Flux<Transaction> findTop10ByDebitCardIdOrderByTransactionDateDesc(String debitCardId);
+
+    /**
+     * Movimientos registrados en un intervalo de fechas, base del reporte general por
+     * producto del banco en un intervalo de tiempo (Parte II).
+     *
+     * @param from fecha y hora inicial (inclusive)
+     * @param to   fecha y hora final (exclusive)
+     * @return flujo con los movimientos del intervalo
+     */
+    Flux<Transaction> findByTransactionDateBetween(LocalDateTime from, LocalDateTime to);
 }

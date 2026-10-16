@@ -14,6 +14,7 @@ import com.nttdata.bank_account_service.repository.BankAccountRepository;
 import com.nttdata.bank_account_service.service.BankAccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -55,6 +56,14 @@ public class BankAccountServiceImpl implements BankAccountService {
     private final BankAccountRepository bankAccountRepository;
     private final CustomerClient customerClient;
     private final CreditClient creditClient;
+
+    /**
+     * Monto mínimo de apertura de una cuenta bancaria (Parte II). Puede ser cero.
+     * Se lee de la propiedad externalizada {@code app.accounts.minimum-opening-amount}
+     * definida en los ficheros de configuración (application.yml local y Config Server).
+     */
+    @Value("${app.accounts.minimum-opening-amount:0}")
+    private Double minimumOpeningAmount;
 
     /**
      * Devuelve todas las cuentas bancarias del sistema.
@@ -113,24 +122,45 @@ public class BankAccountServiceImpl implements BankAccountService {
 
         return customerClient.getCustomerById(request.getCustomerId())
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("El cliente no existe")))
-                .flatMap(customer -> {
-                    AccountType accountType = AccountType.valueOf(request.getAccountType().toUpperCase());
+                // Requerimiento Parte III: un cliente con deuda vencida no puede adquirir
+                // nuevos productos. La consulta a credit-service está protegida por circuit
+                // breaker y degrada a HTTP 503 si el servicio no está disponible.
+                .flatMap(customer -> creditClient.customerHasOverdueDebt(request.getCustomerId())
+                        .flatMap(hasOverdueDebt -> {
+                            if (Boolean.TRUE.equals(hasOverdueDebt)) {
+                                return Mono.error(new IllegalArgumentException(
+                                        "El cliente tiene una deuda vencida y no puede adquirir nuevos productos"));
+                            }
+                            return validateCustomerProductRules(customer, request);
+                        }));
+    }
 
-                    // Fase II: Validación asíncrona para VIP y PYME (Circuit Breaker)
-                    if (accountType == AccountType.VIP || accountType == AccountType.PYME) {
-                        return creditClient.customerHasCreditCard(request.getCustomerId())
-                                .flatMap(hasCreditCard -> {
-                                    if (!hasCreditCard) {
-                                        return Mono.error(new IllegalArgumentException("Para abrir una cuenta " + accountType + " el cliente debe poseer una tarjeta de crédito."));
-                                    }
-                                    // Si tiene tarjeta, continuamos con el flujo estricto de negocio
-                                    return validateAndSave(customer, request);
-                                });
-                    }
+    /**
+     * Valida las reglas de asignación de productos de cuenta según el tipo de cliente y
+     * el tipo de cuenta, incluida la comprobación asíncrona de tarjeta de crédito para
+     * VIP/PYME.
+     *
+     * @param customer cliente que solicita la cuenta
+     * @param request  datos de la cuenta solicitada
+     * @return {@code Mono} con la cuenta persistida
+     */
+    private Mono<BankAccountResponse> validateCustomerProductRules(CustomerDTO customer, BankAccountRequest request) {
+        AccountType accountType = AccountType.valueOf(request.getAccountType().toUpperCase());
 
-                    // Si NO es VIP ni PYME, pasa directo a tu validación de negocio
-                    return validateAndSave(customer, request);
-                });
+        // Fase II: Validación asíncrona para VIP y PYME (Circuit Breaker)
+        if (accountType == AccountType.VIP || accountType == AccountType.PYME) {
+            return creditClient.customerHasCreditCard(request.getCustomerId())
+                    .flatMap(hasCreditCard -> {
+                        if (!hasCreditCard) {
+                            return Mono.error(new IllegalArgumentException("Para abrir una cuenta " + accountType + " el cliente debe poseer una tarjeta de crédito."));
+                        }
+                        // Si tiene tarjeta, continuamos con el flujo estricto de negocio
+                        return validateAndSave(customer, request);
+                    });
+        }
+
+        // Si NO es VIP ni PYME, pasa directo a la validación de negocio
+        return validateAndSave(customer, request);
     }
 
     /**
@@ -199,6 +229,16 @@ public class BankAccountServiceImpl implements BankAccountService {
      */
     private Mono<BankAccount> applyProductRules(BankAccount account, CustomerType customerType) {
         AccountType aType = account.getAccountType();
+
+        // Requerimiento Parte II: toda cuenta bancaria tiene un monto mínimo de apertura
+        // (configurable, puede ser cero). El saldo inicial no puede ser inferior a ese mínimo.
+        double openingBalance = account.getBalance() != null ? account.getBalance() : 0.0;
+        double minOpening = minimumOpeningAmount != null ? minimumOpeningAmount : 0.0;
+        if (openingBalance < minOpening) {
+            return Mono.error(new IllegalArgumentException(
+                    "El saldo inicial de la cuenta (" + openingBalance
+                            + ") no alcanza el monto mínimo de apertura requerido (" + minOpening + ")"));
+        }
 
         if (aType == AccountType.SAVINGS) {
             // Ahorro: libre de comisión por mantenimiento y con límite mensual de movimientos

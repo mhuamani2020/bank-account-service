@@ -20,4 +20,15 @@ public interface CreditClient {
      * @return {@code Mono} con {@code true} cuando el cliente posee tarjeta de crédito
      */
     Mono<Boolean> customerHasCreditCard(String customerId);
+
+    /**
+     * Verifica si un cliente tiene alguna deuda vencida en sus productos de crédito.
+     * <p>
+     * Requerimiento Parte III: un cliente con deuda vencida no puede adquirir nuevos
+     * productos (ni cuentas bancarias ni créditos).
+     *
+     * @param customerId identificador del cliente
+     * @return {@code Mono} con {@code true} cuando el cliente tiene deuda vencida
+     */
+    Mono<Boolean> customerHasOverdueDebt(String customerId);
 }

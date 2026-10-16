@@ -169,6 +169,7 @@ class BankAccountServiceImplTest {
         request.setMaxMovements(10);
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
                 .thenReturn(Mono.just(0L));
         when(bankAccountRepository.save(any(BankAccount.class))).thenReturn(Mono.just(sampleAccount));
@@ -190,6 +191,7 @@ class BankAccountServiceImplTest {
         request.setAccountType("SAVINGS");
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
                 .thenReturn(Mono.just(1L));
 
@@ -211,6 +213,7 @@ class BankAccountServiceImplTest {
         request.setAccountType("SAVINGS");
 
         when(customerClient.getCustomerById("cust-business-01")).thenReturn(Mono.just(businessCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-business-01")).thenReturn(Mono.just(false));
 
         Mono<BankAccountResponse> result = bankAccountService.create(request);
 
@@ -242,6 +245,7 @@ class BankAccountServiceImplTest {
                 .build();
 
         when(customerClient.getCustomerById("cust-business-01")).thenReturn(Mono.just(businessCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-business-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.save(any(BankAccount.class))).thenReturn(Mono.just(currentAccount));
 
         Mono<BankAccountResponse> result = bankAccountService.create(request);
@@ -263,6 +267,7 @@ class BankAccountServiceImplTest {
         request.setMaintenanceFee(30.0);
 
         when(customerClient.getCustomerById("cust-business-01")).thenReturn(Mono.just(businessCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-business-01")).thenReturn(Mono.just(false));
 
         Mono<BankAccountResponse> result = bankAccountService.create(request);
 
@@ -283,6 +288,7 @@ class BankAccountServiceImplTest {
         request.setBalance(800.0);
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "CURRENT"))
                 .thenReturn(Mono.just(0L));
 
@@ -305,6 +311,7 @@ class BankAccountServiceImplTest {
         request.setBalance(100.0);
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
                 .thenReturn(Mono.just(0L));
 
@@ -329,6 +336,7 @@ class BankAccountServiceImplTest {
         request.setMaxMovements(10);
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
                 .thenReturn(Mono.just(0L));
         when(bankAccountRepository.save(any(BankAccount.class)))
@@ -357,6 +365,7 @@ class BankAccountServiceImplTest {
         request.setMaxMovements(50); // Se debe descartar: la corriente no tiene límite
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "CURRENT"))
                 .thenReturn(Mono.just(0L));
         when(bankAccountRepository.save(any(BankAccount.class)))
@@ -382,6 +391,7 @@ class BankAccountServiceImplTest {
         request.setMaintenanceFee(40.0); // Se debe ignorar
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "FIXED_TERM"))
                 .thenReturn(Mono.just(0L));
         when(bankAccountRepository.save(any(BankAccount.class)))
@@ -409,6 +419,7 @@ class BankAccountServiceImplTest {
         request.setAccountType("VIP");
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(creditClient.customerHasCreditCard("cust-personal-01")).thenReturn(Mono.just(false));
 
         Mono<BankAccountResponse> result = bankAccountService.create(request);
@@ -438,6 +449,7 @@ class BankAccountServiceImplTest {
                 .build();
 
         when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
         when(creditClient.customerHasCreditCard("cust-personal-01")).thenReturn(Mono.just(true));
         when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "VIP"))
                 .thenReturn(Mono.just(0L));
@@ -447,6 +459,85 @@ class BankAccountServiceImplTest {
 
         StepVerifier.create(result)
                 .expectNextMatches(res -> "acc-vip-01".equals(res.getId()))
+                .verifyComplete();
+
+        verify(bankAccountRepository, times(1)).save(any(BankAccount.class));
+    }
+
+    // --- REQUERIMIENTO PARTE III: BLOQUEO POR DEUDA VENCIDA ---
+
+    @Test
+    @DisplayName("create: Cliente con deuda vencida no puede adquirir una cuenta")
+    void create_customerWithOverdueDebt_shouldFail() {
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("SAVINGS");
+        request.setBalance(100.0);
+        request.setMaxMovements(10);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(true));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectErrorMatches(throwable -> throwable instanceof IllegalArgumentException
+                        && throwable.getMessage().contains("deuda vencida"))
+                .verify();
+
+        verify(bankAccountRepository, never()).save(any(BankAccount.class));
+    }
+
+    // --- REQUERIMIENTO PARTE II: MONTO MÍNIMO DE APERTURA ---
+
+    @Test
+    @DisplayName("create: Falla si el saldo inicial no alcanza el monto mínimo de apertura")
+    void create_balanceBelowMinimumOpeningAmount_shouldFail() {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                bankAccountService, "minimumOpeningAmount", 100.0);
+
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("SAVINGS");
+        request.setBalance(50.0); // Por debajo del mínimo de 100
+        request.setMaxMovements(10);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
+                .thenReturn(Mono.just(0L));
+
+        Mono<BankAccountResponse> result = bankAccountService.create(request);
+
+        StepVerifier.create(result)
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("monto mínimo de apertura"))
+                .verify();
+
+        verify(bankAccountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("create: Éxito si el saldo inicial alcanza el monto mínimo de apertura")
+    void create_balanceReachesMinimumOpeningAmount_success() {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                bankAccountService, "minimumOpeningAmount", 100.0);
+
+        BankAccountRequest request = new BankAccountRequest();
+        request.setCustomerId("cust-personal-01");
+        request.setAccountType("SAVINGS");
+        request.setBalance(150.0);
+        request.setMaxMovements(10);
+
+        when(customerClient.getCustomerById("cust-personal-01")).thenReturn(Mono.just(personalCustomer));
+        when(creditClient.customerHasOverdueDebt("cust-personal-01")).thenReturn(Mono.just(false));
+        when(bankAccountRepository.countByCustomerIdAndAccountType("cust-personal-01", "SAVINGS"))
+                .thenReturn(Mono.just(0L));
+        when(bankAccountRepository.save(any(BankAccount.class)))
+                .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        StepVerifier.create(bankAccountService.create(request))
+                .expectNextCount(1)
                 .verifyComplete();
 
         verify(bankAccountRepository, times(1)).save(any(BankAccount.class));

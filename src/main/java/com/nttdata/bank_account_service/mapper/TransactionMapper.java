@@ -37,6 +37,7 @@ public class TransactionMapper {
                 .transactionType(TransactionType.valueOf(request.getTransactionType().toUpperCase()))
                 .amount(request.getAmount())
                 .fee(fee)
+                .debitCardId(request.getDebitCardId())
                 .transactionDate(LocalDateTime.now())
                 .build();
     }
@@ -55,6 +56,7 @@ public class TransactionMapper {
         response.setTransactionType(transaction.getTransactionType().name());
         response.setAmount(transaction.getAmount());
         response.setFee(transaction.getFee());
+        response.setDebitCardId(transaction.getDebitCardId());
         // Ajustamos la fecha al formato que espera OpenAPI
         response.setTransactionDate(transaction.getTransactionDate().atOffset(ZoneOffset.UTC));
         return response;

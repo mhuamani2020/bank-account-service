@@ -13,5 +13,7 @@ public enum TransactionType {
     /** Entrada de una transferencia desde otra cuenta. */
     TRANSFER_IN,
     /** Salida de una transferencia hacia otra cuenta. */
-    TRANSFER_OUT
+    TRANSFER_OUT,
+    /** Pago realizado con una tarjeta de débito (debita la cuenta asociada). */
+    DEBIT_CARD_PAYMENT
 }

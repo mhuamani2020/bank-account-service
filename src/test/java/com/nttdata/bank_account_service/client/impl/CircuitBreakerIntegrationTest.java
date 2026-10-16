@@ -27,7 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.cloud.config.enabled=false",
         "spring.data.mongodb.auto-index-creation=false",
         "app.urls.customer-service=http://localhost:9/customers/",
-        "app.urls.credit-service=http://localhost:9/credits/"
+        "app.urls.credit-service=http://localhost:9/credits/",
+        "app.jwt.secret=bank-system-super-secret-key-for-jwt-hs256-2026-nttdata",
+        // Kafka (Parte III): en esta prueba no hay broker; no arrancamos listeners ni
+        // intentamos crear topics automáticamente.
+        "spring.kafka.listener.auto-startup=false",
+        "spring.kafka.admin.auto-create=false"
 })
 class CircuitBreakerIntegrationTest {
 
@@ -57,6 +62,18 @@ class CircuitBreakerIntegrationTest {
 
         // con el circuito abierto la llamada se cortocircuita y sigue devolviendo 503
         StepVerifier.create(creditClient.customerHasCreditCard("cust-open"))
+                .expectError(ServiceUnavailableException.class)
+                .verify();
+    }
+
+    @Test
+    @DisplayName("El fallback de la consulta de deuda vencida responde 503")
+    void overdueDebtFallbackReturnsServiceUnavailable() {
+        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker(CIRCUIT_NAME);
+        circuitBreaker.reset();
+
+        // Con el servicio de créditos caído la consulta de deuda vencida degrada a 503
+        StepVerifier.create(creditClient.customerHasOverdueDebt("cust-01"))
                 .expectError(ServiceUnavailableException.class)
                 .verify();
     }

@@ -222,6 +222,204 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AvailableBalanceResponse'
+  # ==========================================================================
+  # Tarjetas de débito (Parte III): "Los clientes ahora pueden tener tarjetas de
+  # débito asociado a sus cuentas bancarias y hacer pagos con ellas."
+  # CRUD completo de la entidad DebitCard + pagos + consulta de movimientos.
+  # ==========================================================================
+  /debit-cards:
+    get:
+      summary: Obtener todas las tarjetas de débito
+      operationId: findAllDebitCards
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DebitCardResponse'
+    post:
+      summary: Crear una tarjeta de débito asociada a una cuenta bancaria
+      operationId: createDebitCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebitCardRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitCardResponse'
+  /debit-cards/{id}:
+    get:
+      summary: Obtener una tarjeta de débito por su ID
+      operationId: findDebitCardById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitCardResponse'
+    put:
+      summary: Actualizar una tarjeta de débito (por ejemplo, bloquear o activar)
+      operationId: updateDebitCard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebitCardRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitCardResponse'
+    delete:
+      summary: Eliminar una tarjeta de débito
+      operationId: deleteDebitCard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+  /debit-cards/customer/{customerId}:
+    get:
+      summary: Obtener las tarjetas de débito de un cliente
+      operationId: findDebitCardsByCustomer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DebitCardResponse'
+  /debit-cards/{id}/payments:
+    post:
+      summary: Realizar un pago con la tarjeta de débito (debita la cuenta asociada)
+      operationId: payWithDebitCard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DebitCardPaymentRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebitCardPaymentResponse'
+  /debit-cards/{id}/movements:
+    get:
+      summary: Obtener los movimientos (pagos) de una tarjeta de débito
+      operationId: getDebitCardMovements
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+  # ==========================================================================
+  # Reportes (Parte II):
+  #  - Reporte general por producto del banco en un intervalo de tiempo.
+  #  - Reporte de los últimos 10 movimientos de la tarjeta de débito.
+  # ==========================================================================
+  /reports/bank-accounts/products-summary:
+    get:
+      summary: Reporte general por producto (tipo de cuenta) en un intervalo de tiempo
+      operationId: getAccountProductsSummary
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: "Fecha inicial del intervalo (inclusive), formato YYYY-MM-DD."
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: "Fecha final del intervalo (inclusive), formato YYYY-MM-DD."
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductReportItem'
+  /reports/debit-card/{cardId}/last-movements:
+    get:
+      summary: Últimos 10 movimientos de una tarjeta de débito
+      operationId: getDebitCardLastMovements
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
 components:
   schemas:
     BankAccountRequest:
@@ -283,6 +481,95 @@ components:
           type: number
           format: double
           description: "Saldo disponible actual de la cuenta."
+    DebitCardRequest:
+      type: object
+      required:
+        - accountId
+      properties:
+        accountId:
+          type: string
+          description: "Identificador de la cuenta bancaria a la que se asocia la tarjeta."
+        status:
+          type: string
+          description: "Estado de la tarjeta: ACTIVE o BLOCKED. Por defecto ACTIVE."
+    DebitCardResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+          description: "Cuenta bancaria asociada a la tarjeta de débito."
+        customerId:
+          type: string
+          description: "Cliente titular de la cuenta asociada."
+        cardNumber:
+          type: string
+          description: "Número de tarjeta de débito generado."
+        status:
+          type: string
+          description: "ACTIVE o BLOCKED."
+        createdAt:
+          type: string
+          format: date-time
+    DebitCardPaymentRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+          format: double
+          description: "Importe del pago con la tarjeta. Debe ser mayor que cero."
+        description:
+          type: string
+          description: "Descripción o comercio del pago (opcional)."
+    DebitCardPaymentResponse:
+      type: object
+      properties:
+        cardId:
+          type: string
+        accountId:
+          type: string
+        transactionId:
+          type: string
+        amount:
+          type: number
+          format: double
+        fee:
+          type: number
+          format: double
+          description: "Comisión aplicada al pago según las reglas de la cuenta."
+        balanceAfter:
+          type: number
+          format: double
+          description: "Saldo disponible de la cuenta tras el pago."
+        paymentDate:
+          type: string
+          format: date-time
+    ProductReportItem:
+      type: object
+      description: Fila del reporte general por producto del banco en un intervalo de tiempo.
+      properties:
+        productType:
+          type: string
+          description: "Tipo de producto (por ejemplo SAVINGS, CURRENT, CREDIT_CARD)."
+        numberOfProducts:
+          type: integer
+          format: int64
+          description: "Cantidad de productos de ese tipo."
+        totalBalance:
+          type: number
+          format: double
+          description: "Saldo total acumulado de los productos de ese tipo."
+        numberOfMovements:
+          type: integer
+          format: int64
+          description: "Cantidad de movimientos del producto registrados en el intervalo."
+        totalMovementAmount:
+          type: number
+          format: double
+          description: "Importe total de los movimientos registrados en el intervalo."
     BankAccountResponse:
       type: object
       properties:
@@ -321,10 +608,15 @@ components:
       properties:
         transactionType:
           type: string
-          description: "DEPOSIT, WITHDRAWAL"
+          description: "DEPOSIT, WITHDRAWAL, TRANSFER_IN, TRANSFER_OUT, DEBIT_CARD_PAYMENT"
         amount:
           type: number
           format: double
+        debitCardId:
+          type: string
+          description: >-
+            Identificador de la tarjeta de débito cuando el movimiento corresponde a un
+            pago realizado con ella (tipo DEBIT_CARD_PAYMENT). Opcional.
     TransactionResponse:
       type: object
       properties:
@@ -341,6 +633,9 @@ components:
           type: number
           format: double
           description: "Comisión cobrada si se superó el límite de movimientos gratuitos"
+        debitCardId:
+          type: string
+          description: "Tarjeta de débito asociada cuando el movimiento es un pago con tarjeta."
         transactionDate:
           type: string
           format: date-time

@@ -1,5 +1,6 @@
 package com.nttdata.bank_account_service.controller;
 
+import com.nttdata.bank_account_service.config.TestSecurityConfig;
 import com.nttdata.bank_account_service.dto.AvailableBalanceResponse;
 import com.nttdata.bank_account_service.dto.BankAccountRequest;
 import com.nttdata.bank_account_service.dto.BankAccountResponse;
@@ -26,7 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(controllers = BankAccountController.class)
-@Import(StandardApiExceptionHandler.class)
+@Import({StandardApiExceptionHandler.class, TestSecurityConfig.class})
 class BankAccountControllerTest {
 
     @Autowired

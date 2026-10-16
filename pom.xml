@@ -41,6 +41,34 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Seguridad reactiva: resource server que valida los JWT emitidos por auth-service -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!-- RxJava 3: las NUEVAS funcionalidades (Parte III) se implementan con el modelo
+             de reactividad de RxJava. La capa de servicio devuelve Single / Maybe /
+             Flowable / Completable y el controlador (contract-first, interfaz Reactor
+             generada) los adapta a Reactor en el borde HTTP. -->
+        <dependency>
+            <groupId>io.reactivex.rxjava3</groupId>
+            <artifactId>rxjava</artifactId>
+            <version>3.1.8</version>
+        </dependency>
+
+        <!-- Kafka (Parte III): arquitectura orientada a eventos. El servicio publica los
+             eventos de dominio de cada movimiento y consume comandos de monedero (Yanki)
+             para no exponer ni consumir APIs REST entre microservicios nuevos. -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
         <!-- Lombok (Gestionado nativamente por Spring Boot) -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -58,6 +86,11 @@
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -196,7 +229,8 @@
                 </executions>
             </plugin>
 
-            <!-- Checkstyle en modo flexible -->
+            <!-- Checkstyle en modo informativo: se ejecuta en la fase validate pero no
+                 rompe el build con las reglas sun_checks (solo reporta violaciones). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
@@ -205,12 +239,13 @@
                     <configLocation>sun_checks.xml</configLocation>
                     <consoleOutput>true</consoleOutput>
                     <failsOnError>false</failsOnError>
+                    <failOnViolation>false</failOnViolation>
                     <linkXRef>false</linkXRef>
                 </configuration>
                 <executions>
                     <execution>
                         <id>validate</id>
-                        <phase>none</phase>
+                        <phase>validate</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>

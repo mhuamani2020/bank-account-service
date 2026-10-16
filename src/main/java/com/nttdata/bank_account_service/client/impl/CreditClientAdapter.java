@@ -60,4 +60,29 @@ public class CreditClientAdapter implements CreditClient { // <-- Implementamos 
         log.error("credit-service no disponible para el cliente {}: {}", customerId, throwable.toString());
         return ServiceFallbacks.unavailable(ServiceNames.CREDIT, throwable);
     }
+
+    /**
+     * Consulta si el cliente posee alguna deuda vencida en sus productos de crédito.
+     * <p>
+     * Mismo estándar de resiliencia que {@link #customerHasCreditCard(String)}: circuit
+     * breaker + time limiter con fallback a HTTP 503.
+     */
+    @Override
+    @CircuitBreaker(name = ServiceNames.CREDIT_CB, fallbackMethod = "customerHasOverdueDebtFallback")
+    @TimeLimiter(name = ServiceNames.CREDIT_CB)
+    public Mono<Boolean> customerHasOverdueDebt(String customerId) {
+        log.info("Consultando al credit-service si el cliente {} tiene deuda vencida", customerId);
+
+        return webClient.get()
+                .uri(creditServiceUrl + "customer/" + customerId + "/has-overdue-debt")
+                .retrieve()
+                .bodyToMono(Boolean.class)
+                .switchIfEmpty(ServiceFallbacks.unavailable(ServiceNames.CREDIT,
+                        new IllegalStateException("El credit-service devolvió una respuesta vacía")));
+    }
+
+    private Mono<Boolean> customerHasOverdueDebtFallback(String customerId, Throwable throwable) {
+        log.error("credit-service no disponible para verificar deuda vencida del cliente {}: {}", customerId, throwable.toString());
+        return ServiceFallbacks.unavailable(ServiceNames.CREDIT, throwable);
+    }
 }

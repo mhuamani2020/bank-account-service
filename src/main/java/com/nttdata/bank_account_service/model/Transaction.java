@@ -43,6 +43,13 @@ public class Transaction {
     /** Comisión cobrada por este movimiento (límite mensual y/o mantenimiento). */
     private Double fee;
 
+    /**
+     * Identificador de la tarjeta de débito cuando el movimiento es un pago realizado
+     * con ella (tipo {@code DEBIT_CARD_PAYMENT}); {@code null} en el resto de casos.
+     * Permite consultar los movimientos de una tarjeta de débito concreta.
+     */
+    private String debitCardId;
+
     /** Fecha y hora en que se registró el movimiento. */
     private LocalDateTime transactionDate;
 }

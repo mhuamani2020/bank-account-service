@@ -3,6 +3,21 @@ spring:
     name: bank-account-service
   config:
     import: "optional:configserver:http://localhost:8888"
+  # ========================================================================
+  # Kafka (Parte III) — arquitectura orientada a eventos
+  # El servicio publica eventos de dominio de cada movimiento y consume los
+  # comandos de operación de monedero (Yanki) por Kafka, nunca por REST.
+  # ========================================================================
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: bank-account-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 # ==========================================================================
 # Propiedades externalizadas (Parte I: "No deben tener configuraciones en el código")
@@ -14,6 +29,16 @@ app:
   urls:
     customer-service: "http://localhost:8081/customers/"
     credit-service: "http://localhost:8083/credits/"
+  accounts:
+    # Requerimiento Parte II: monto mínimo de apertura de las cuentas bancarias.
+    # Puede ser cero (cuentas abribles sin monto inicial mínimo).
+    minimum-opening-amount: 0.0
+  kafka:
+    # Parte III: arquitectura orientada a eventos con Kafka como message broker.
+    topics:
+      account-transactions: bank-account-transactions
+      wallet-operations: wallet-operations
+      wallet-operation-results: wallet-operation-results
 
 # ==========================================================================
 # Estándar de resiliencia (circuit breakers) — bank-resilience-commons

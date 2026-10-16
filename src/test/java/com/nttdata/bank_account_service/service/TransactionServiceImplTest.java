@@ -5,15 +5,19 @@ import com.nttdata.bank_account_service.dto.TransactionResponse;
 import com.nttdata.bank_account_service.dto.TransferRequest;
 import com.nttdata.bank_account_service.enums.AccountType;
 import com.nttdata.bank_account_service.enums.TransactionType;
+import com.nttdata.bank_account_service.event.AccountTransactionEvent;
+import com.nttdata.bank_account_service.messaging.KafkaEventPublisher;
 import com.nttdata.bank_account_service.model.BankAccount;
 import com.nttdata.bank_account_service.model.Transaction;
 import com.nttdata.bank_account_service.repository.BankAccountRepository;
 import com.nttdata.bank_account_service.repository.TransactionRepository;
 import com.nttdata.bank_account_service.service.impl.TransactionServiceImpl;
+import io.reactivex.rxjava3.core.Completable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +27,7 @@ import reactor.test.StepVerifier;
 
 import java.time.LocalDateTime;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -35,6 +40,9 @@ class TransactionServiceImplTest {
 
     @Mock
     private BankAccountRepository accountRepository;
+
+    @Mock
+    private KafkaEventPublisher eventPublisher;
 
     @InjectMocks
     private TransactionServiceImpl transactionService;
@@ -82,6 +90,11 @@ class TransactionServiceImplTest {
                 .fee(0.0)
                 .transactionDate(LocalDateTime.now())
                 .build();
+
+        // La publicación de eventos de dominio (Kafka) es best-effort y no debe alterar el
+        // resultado de negocio; se mockea como completa y exitosa.
+        lenient().when(eventPublisher.publishAccountTransaction(any(AccountTransactionEvent.class)))
+                .thenReturn(Completable.complete());
     }
 
     // --- CREATE TRANSACTION: DEPOSIT ---
@@ -428,6 +441,73 @@ class TransactionServiceImplTest {
         verify(accountRepository).save(argThat(acc -> "acc-002".equals(acc.getId()) && Double.valueOf(400.0).equals(acc.getBalance())));
     }
 
+    @Test
+    @DisplayName("createTransfer: Falla si la cuenta origen y la destino son la misma")
+    void createTransfer_sameAccount_shouldFail() {
+        TransferRequest request = new TransferRequest();
+        request.setSourceAccountId("acc-001");
+        request.setTargetAccountId("acc-001");
+        request.setAmount(200.0);
+
+        StepVerifier.create(transactionService.createTransfer(request))
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("deben ser distintas"))
+                .verify();
+
+        verify(accountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("createTransfer: Falla si el monto no es mayor que cero")
+    void createTransfer_invalidAmount_shouldFail() {
+        TransferRequest request = new TransferRequest();
+        request.setSourceAccountId("acc-001");
+        request.setTargetAccountId("acc-002");
+        request.setAmount(0.0);
+
+        StepVerifier.create(transactionService.createTransfer(request))
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("mayor que cero"))
+                .verify();
+
+        verify(accountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("createTransfer: Falla si la cuenta destino no existe (no deja la operación a medias)")
+    void createTransfer_targetNotFound_shouldFail() {
+        TransferRequest request = new TransferRequest();
+        request.setSourceAccountId("acc-001");
+        request.setTargetAccountId("acc-999");
+        request.setAmount(200.0);
+
+        when(accountRepository.findById("acc-001")).thenReturn(Mono.just(sourceAccount));
+        when(accountRepository.findById("acc-999")).thenReturn(Mono.empty());
+
+        StepVerifier.create(transactionService.createTransfer(request))
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("cuenta destino no existe"))
+                .verify();
+
+        verify(accountRepository, never()).save(any(BankAccount.class));
+    }
+
+    @Test
+    @DisplayName("createTransfer: Falla si la cuenta origen no existe")
+    void createTransfer_sourceNotFound_shouldFail() {
+        TransferRequest request = new TransferRequest();
+        request.setSourceAccountId("acc-999");
+        request.setTargetAccountId("acc-002");
+        request.setAmount(200.0);
+
+        when(accountRepository.findById("acc-999")).thenReturn(Mono.empty());
+
+        StepVerifier.create(transactionService.createTransfer(request))
+                .expectErrorMatches(ex -> ex instanceof IllegalArgumentException
+                        && ex.getMessage().contains("cuenta origen no existe"))
+                .verify();
+    }
+
     // --- CRUD COMPLETO DE LA ENTIDAD TRANSACTION ---
 
     @Test
@@ -494,5 +574,57 @@ class TransactionServiceImplTest {
                 .verifyComplete();
 
         verify(transactionRepository, times(1)).deleteById("tx-001");
+    }
+
+    @Test
+    @DisplayName("createTransaction: Pago con tarjeta de débito debita la cuenta y guarda el id de la tarjeta")
+    void createTransaction_debitCardPayment_shouldDebitAccountAndPersistCardId() {
+        TransactionRequest request = new TransactionRequest();
+        request.setTransactionType("DEBIT_CARD_PAYMENT");
+        request.setAmount(150.0);
+        request.setDebitCardId("card-01");
+
+        when(accountRepository.findById("acc-001")).thenReturn(Mono.just(sourceAccount));
+        when(transactionRepository.countByAccountIdAndTransactionDateBetween(eq("acc-001"), any(), any()))
+                .thenReturn(Mono.just(0L)); // Primer movimiento del mes, sin comisión
+        when(accountRepository.save(any(BankAccount.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        Mono<TransactionResponse> result = transactionService.createTransaction("acc-001", request);
+
+        StepVerifier.create(result)
+                .expectNextMatches(res -> "DEBIT_CARD_PAYMENT".equals(res.getTransactionType())
+                        && "card-01".equals(res.getDebitCardId()))
+                .verifyComplete();
+
+        // Saldo previo 1000 - 150 = 850
+        verify(accountRepository).save(argThat(acc -> Double.valueOf(850.0).equals(acc.getBalance())));
+        verify(transactionRepository).save(argThat(tx -> "card-01".equals(tx.getDebitCardId())));
+    }
+
+    @Test
+    @DisplayName("createTransaction: publica el evento de dominio del movimiento en Kafka")
+    void createTransaction_shouldPublishAccountTransactionEvent() {
+        TransactionRequest request = new TransactionRequest();
+        request.setTransactionType("DEPOSIT");
+        request.setAmount(200.0);
+
+        when(accountRepository.findById("acc-001")).thenReturn(Mono.just(sourceAccount));
+        when(transactionRepository.countByAccountIdAndTransactionDateBetween(eq("acc-001"), any(), any()))
+                .thenReturn(Mono.just(0L));
+        when(accountRepository.save(any(BankAccount.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(transactionRepository.save(any(Transaction.class))).thenReturn(Mono.just(transactionEntity));
+
+        StepVerifier.create(transactionService.createTransaction("acc-001", request))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        ArgumentCaptor<AccountTransactionEvent> captor = ArgumentCaptor.forClass(AccountTransactionEvent.class);
+        verify(eventPublisher).publishAccountTransaction(captor.capture());
+        AccountTransactionEvent event = captor.getValue();
+        assertThat(event.getAccountId()).isEqualTo("acc-001");
+        assertThat(event.getCustomerId()).isEqualTo(sourceAccount.getCustomerId());
+        assertThat(event.getTransactionId()).isEqualTo("tx-001");
+        assertThat(event.getTransactionType()).isEqualTo("DEPOSIT");
     }
 }

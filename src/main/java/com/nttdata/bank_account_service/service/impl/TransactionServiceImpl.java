@@ -5,7 +5,9 @@ import com.nttdata.bank_account_service.dto.TransactionResponse;
 import com.nttdata.bank_account_service.dto.TransferRequest;
 import com.nttdata.bank_account_service.enums.AccountType;
 import com.nttdata.bank_account_service.enums.TransactionType;
+import com.nttdata.bank_account_service.event.AccountTransactionEvent;
 import com.nttdata.bank_account_service.mapper.TransactionMapper;
+import com.nttdata.bank_account_service.messaging.KafkaEventPublisher;
 import com.nttdata.bank_account_service.model.BankAccount;
 import com.nttdata.bank_account_service.model.Transaction;
 import com.nttdata.bank_account_service.repository.BankAccountRepository;
@@ -17,9 +19,11 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.UUID;
 
 /**
  * Implementación reactiva del servicio de movimientos de cuentas bancarias.
@@ -47,6 +51,7 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final BankAccountRepository accountRepository;
+    private final KafkaEventPublisher eventPublisher;
 
     /** Comisión por defecto que se aplica al superar el límite de movimientos del mes. */
     private static final Double DEFAULT_FEE = 3.50;
@@ -127,6 +132,20 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Iniciando transferencia de cuenta {} a cuenta {} por {}",
                 request.getSourceAccountId(), request.getTargetAccountId(), request.getAmount());
 
+        // Reglas de validación de la transferencia (Parte II):
+        // 1) La cuenta origen y la destino deben ser distintas.
+        // 2) El importe debe ser mayor que cero.
+        // 3) La cuenta destino debe existir y pertenecer al mismo banco (base de datos
+        //    propia, por lo que toda cuenta consultada es del mismo banco) ANTES de
+        //    retirar dinero de la origen, para no dejar la operación a medias.
+        if (request.getSourceAccountId() == null || request.getSourceAccountId().equals(request.getTargetAccountId())) {
+            return Mono.error(new IllegalArgumentException(
+                    "La cuenta origen y la cuenta destino deben ser distintas"));
+        }
+        if (request.getAmount() == null || request.getAmount() <= 0) {
+            return Mono.error(new IllegalArgumentException("El monto de la transferencia debe ser mayor que cero"));
+        }
+
         // Preparamos la petición de retiro para la cuenta origen
         TransactionRequest withdrawal = new TransactionRequest();
         withdrawal.setTransactionType(TransactionType.TRANSFER_OUT.name());
@@ -137,10 +156,16 @@ public class TransactionServiceImpl implements TransactionService {
         deposit.setTransactionType(TransactionType.TRANSFER_IN.name());
         deposit.setAmount(request.getAmount());
 
-        // Ejecutamos en cadena: Primero retiramos, luego depositamos
-        return createTransaction(request.getSourceAccountId(), withdrawal)
-                .then(createTransaction(request.getTargetAccountId(), deposit))
-                .then(); // Retornamos Mono<Void> al terminar
+        // Verificamos primero que ambas cuentas existen; transferencias entre cuentas del
+        // mismo cliente y a terceros del mismo banco se permiten siempre que el destino exista.
+        return accountRepository.findById(request.getSourceAccountId())
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("La cuenta origen no existe")))
+                .flatMap(sourceAccount -> accountRepository.findById(request.getTargetAccountId())
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("La cuenta destino no existe")))
+                        // Ejecutamos en cadena: primero retiramos de la origen, luego depositamos en la destino
+                        .flatMap(targetAccount -> createTransaction(request.getSourceAccountId(), withdrawal)
+                                .then(createTransaction(request.getTargetAccountId(), deposit))
+                                .then())); // Retornamos Mono<Void> al terminar
     }
 
     /**
@@ -327,7 +352,8 @@ public class TransactionServiceImpl implements TransactionService {
                                                     TransactionType type, Double amount, long monthlyCount) {
         Double fee = calculateFee(account, monthlyCount);
 
-        if (type == TransactionType.WITHDRAWAL || type == TransactionType.TRANSFER_OUT) {
+        if (type == TransactionType.WITHDRAWAL || type == TransactionType.TRANSFER_OUT
+                || type == TransactionType.DEBIT_CARD_PAYMENT) {
             if (account.getBalance() < (amount + fee)) {
                 return Mono.error(new IllegalArgumentException("Saldo insuficiente para el retiro/transferencia y comisiones"));
             }
@@ -339,6 +365,32 @@ public class TransactionServiceImpl implements TransactionService {
         // 4. Guardamos la cuenta con el nuevo saldo, Y LUEGO guardamos el historial del movimiento
         return accountRepository.save(account)
                 .then(Mono.defer(() -> transactionRepository.save(TransactionMapper.toEntity(accountId, request, fee))))
+                // Parte III: arquitectura orientada a eventos. Publicamos el evento de dominio
+                // del movimiento en Kafka (best-effort: no interrumpe la operación de negocio).
+                .flatMap(saved -> Mono.from(eventPublisher.publishAccountTransaction(toEvent(account, saved)).toFlowable())
+                        .thenReturn(saved))
                 .map(TransactionMapper::toResponse);
+    }
+
+    /**
+     * Construye el evento de dominio que notifica un movimiento ya registrado.
+     *
+     * @param account cuenta con el saldo ya actualizado
+     * @param saved   movimiento persistido
+     * @return evento de dominio del movimiento
+     */
+    private AccountTransactionEvent toEvent(BankAccount account, Transaction saved) {
+        return AccountTransactionEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .accountId(account.getId())
+                .customerId(account.getCustomerId())
+                .debitCardId(saved.getDebitCardId())
+                .transactionType(saved.getTransactionType() != null ? saved.getTransactionType().name() : null)
+                .amount(saved.getAmount())
+                .fee(saved.getFee())
+                .balanceAfter(account.getBalance())
+                .transactionId(saved.getId())
+                .occurredAt(Instant.now().toString())
+                .build();
     }
 }
