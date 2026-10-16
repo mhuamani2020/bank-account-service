@@ -152,7 +152,8 @@ public class BankAccountServiceImpl implements BankAccountService {
             return creditClient.customerHasCreditCard(request.getCustomerId())
                     .flatMap(hasCreditCard -> {
                         if (!hasCreditCard) {
-                            return Mono.error(new IllegalArgumentException("Para abrir una cuenta " + accountType + " el cliente debe poseer una tarjeta de crédito."));
+                            return Mono.error(new IllegalArgumentException("Para abrir una cuenta " + accountType
+                                    + " el cliente debe poseer una tarjeta de crédito."));
                         }
                         // Si tiene tarjeta, continuamos con el flujo estricto de negocio
                         return validateAndSave(customer, request);
@@ -177,7 +178,8 @@ public class BankAccountServiceImpl implements BankAccountService {
 
         if (cType == CustomerType.BUSINESS) {
             if (aType == AccountType.SAVINGS || aType == AccountType.FIXED_TERM) {
-                return Mono.error(new IllegalArgumentException("Un cliente empresarial no puede tener cuentas de ahorro ni a plazo fijo"));
+                return Mono.error(new IllegalArgumentException(
+                        "Un cliente empresarial no puede tener cuentas de ahorro ni a plazo fijo"));
             }
             return saveAccount(cType, request);
         }
@@ -186,7 +188,8 @@ public class BankAccountServiceImpl implements BankAccountService {
             return bankAccountRepository.countByCustomerIdAndAccountType(customer.getId(), aType.name())
                     .flatMap(count -> {
                         if (count >= 1) {
-                            return Mono.error(new IllegalArgumentException("Un cliente personal solo puede tener un máximo de una cuenta de tipo " + aType));
+                            return Mono.error(new IllegalArgumentException(
+                                    "Un cliente personal solo puede tener un máximo de una cuenta de tipo " + aType));
                         }
                         return saveAccount(cType, request);
                     });
@@ -245,16 +248,19 @@ public class BankAccountServiceImpl implements BankAccountService {
             account.setMaintenanceFee(0.0);
             if (account.getMaxMovements() == null || account.getMaxMovements() <= 0) {
                 return Mono.error(new IllegalArgumentException(
-                        "Una cuenta de ahorro debe indicar un límite máximo de movimientos mensuales (maxMovements > 0)"));
+                        "Una cuenta de ahorro debe indicar un límite máximo de movimientos mensuales "
+                                + "(maxMovements > 0)"));
             }
         } else if (aType == AccountType.CURRENT) {
             // Cuenta corriente: posee comisión de mantenimiento y no tiene límite de movimientos
             if (account.getMaintenanceFee() == null || account.getMaintenanceFee() <= 0) {
                 return Mono.error(new IllegalArgumentException(
-                        "Una cuenta corriente debe indicar una comisión de mantenimiento mayor que cero (maintenanceFee > 0)"));
+                        "Una cuenta corriente debe indicar una comisión de mantenimiento mayor que cero "
+                                + "(maintenanceFee > 0)"));
             }
             account.setMaxMovements(null);
-            log.debug("Cuenta corriente registrada sin límite de movimientos mensuales (comisión de mantenimiento {})", account.getMaintenanceFee());
+            log.debug("Cuenta corriente registrada sin límite de movimientos mensuales "
+                    + "(comisión de mantenimiento {})", account.getMaintenanceFee());
         } else if (aType == AccountType.FIXED_TERM) {
             // Plazo fijo: libre de comisión y un único movimiento en un día concreto del mes
             account.setMaintenanceFee(0.0);
@@ -263,7 +269,8 @@ public class BankAccountServiceImpl implements BankAccountService {
                     || account.getFixedTermWithdrawalDay() > 31) {
                 account.setFixedTermWithdrawalDay(DEFAULT_FIXED_TERM_WITHDRAWAL_DAY);
             }
-            log.debug("Cuenta a plazo fijo habilitada para mover únicamente el día {}", account.getFixedTermWithdrawalDay());
+            log.debug("Cuenta a plazo fijo habilitada para mover únicamente el día {}",
+                    account.getFixedTermWithdrawalDay());
         }
 
         // Cuentas bancarias empresariales: uno o más titulares y cero o más firmantes

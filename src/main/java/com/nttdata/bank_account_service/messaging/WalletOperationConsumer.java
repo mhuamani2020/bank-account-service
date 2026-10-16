@@ -88,14 +88,16 @@ public class WalletOperationConsumer {
     private Single<WalletOperationResult> process(WalletOperationEvent event) {
         if (event == null || event.getOperationId() == null || event.getDebitCardId() == null
                 || event.getAmount() == null || event.getAmount() <= 0) {
-            return Single.just(failed(event, "Operación de monedero inválida: tarjeta e importe positivo son obligatorios"));
+            return Single.just(failed(event,
+                    "Operación de monedero inválida: tarjeta e importe positivo son obligatorios"));
         }
 
         WalletOperationType type;
         try {
             type = WalletOperationType.valueOf(event.getOperationType().toUpperCase(Locale.ROOT));
         } catch (Exception ex) {
-            return Single.just(failed(event, "Tipo de operación de monedero no soportado: " + event.getOperationType()));
+            return Single.just(failed(event,
+                    "Tipo de operación de monedero no soportado: " + event.getOperationType()));
         }
 
         Single<WalletOperationResult> operation = type == WalletOperationType.TOP_UP

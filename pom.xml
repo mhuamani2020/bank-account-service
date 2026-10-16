@@ -229,17 +229,21 @@
                 </executions>
             </plugin>
 
-            <!-- Checkstyle en modo informativo: se ejecuta en la fase validate pero no
-                 rompe el build con las reglas sun_checks (solo reporta violaciones). -->
+            <!-- Checkstyle: valida el estilo del codigo con el ruleset propio del
+                     proyecto (config/checkstyle/checkstyle.xml). Se ejecuta en la fase
+                     validate y rompe el build si hay violaciones. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>3.3.1</version>
                 <configuration>
-                    <configLocation>sun_checks.xml</configLocation>
+                    <configLocation>${project.basedir}/config/checkstyle/checkstyle.xml</configLocation>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+                    </sourceDirectories>
                     <consoleOutput>true</consoleOutput>
-                    <failsOnError>false</failsOnError>
-                    <failOnViolation>false</failOnViolation>
+                    <failsOnError>true</failsOnError>
+                    <failOnViolation>true</failOnViolation>
                     <linkXRef>false</linkXRef>
                 </configuration>
                 <executions>

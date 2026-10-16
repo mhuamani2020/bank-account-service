@@ -82,7 +82,8 @@ public class CreditClientAdapter implements CreditClient { // <-- Implementamos 
     }
 
     private Mono<Boolean> customerHasOverdueDebtFallback(String customerId, Throwable throwable) {
-        log.error("credit-service no disponible para verificar deuda vencida del cliente {}: {}", customerId, throwable.toString());
+        log.error("credit-service no disponible para verificar deuda vencida del cliente {}: {}", customerId,
+                throwable.toString());
         return ServiceFallbacks.unavailable(ServiceNames.CREDIT, throwable);
     }
 }

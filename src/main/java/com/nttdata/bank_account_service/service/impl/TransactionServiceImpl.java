@@ -105,7 +105,8 @@ public class TransactionServiceImpl implements TransactionService {
                 .then(validateFixedTermDay(account))
                 .then(Mono.defer(() -> countMonthlyMovements(accountId)))
                 .flatMap(monthlyCount -> validateFixedTermMonthlyLimit(account, monthlyCount)
-                        .then(Mono.defer(() -> applyMovement(account, accountId, request, type, amount, monthlyCount))));
+                        .then(Mono.defer(() -> applyMovement(account, accountId, request, type, amount,
+                                monthlyCount))));
     }
 
     /**
@@ -355,7 +356,8 @@ public class TransactionServiceImpl implements TransactionService {
         if (type == TransactionType.WITHDRAWAL || type == TransactionType.TRANSFER_OUT
                 || type == TransactionType.DEBIT_CARD_PAYMENT) {
             if (account.getBalance() < (amount + fee)) {
-                return Mono.error(new IllegalArgumentException("Saldo insuficiente para el retiro/transferencia y comisiones"));
+                return Mono.error(new IllegalArgumentException(
+                        "Saldo insuficiente para el retiro/transferencia y comisiones"));
             }
             account.setBalance(account.getBalance() - amount - fee);
         } else if (type == TransactionType.DEPOSIT || type == TransactionType.TRANSFER_IN) {
@@ -367,7 +369,8 @@ public class TransactionServiceImpl implements TransactionService {
                 .then(Mono.defer(() -> transactionRepository.save(TransactionMapper.toEntity(accountId, request, fee))))
                 // Parte III: arquitectura orientada a eventos. Publicamos el evento de dominio
                 // del movimiento en Kafka (best-effort: no interrumpe la operación de negocio).
-                .flatMap(saved -> Mono.from(eventPublisher.publishAccountTransaction(toEvent(account, saved)).toFlowable())
+                .flatMap(saved -> Mono.from(eventPublisher.publishAccountTransaction(toEvent(account, saved))
+                        .toFlowable())
                         .thenReturn(saved))
                 .map(TransactionMapper::toResponse);
     }

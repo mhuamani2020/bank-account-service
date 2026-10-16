@@ -14,9 +14,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class BankAccountServiceApplication {
 
-	/** Arranca el microservicio de cuentas bancarias. */
-	public static void main(String[] args) {
-		SpringApplication.run(BankAccountServiceApplication.class, args);
-	}
+    /** Arranca el microservicio de cuentas bancarias. */
+    public static void main(String[] args) {
+        SpringApplication.run(BankAccountServiceApplication.class, args);
+    }
 
 }

@@ -158,7 +158,8 @@ public class DebitCardController implements DebitCardsApi {
      * @return respuesta 200 con los movimientos de la tarjeta
      */
     @Override
-    public Mono<ResponseEntity<Flux<TransactionResponse>>> getDebitCardMovements(String id, ServerWebExchange exchange) {
+    public Mono<ResponseEntity<Flux<TransactionResponse>>> getDebitCardMovements(
+            String id, ServerWebExchange exchange) {
         log.info("Fetching movements of debit card: {}", id);
         return Mono.just(ResponseEntity.ok(Flux.from(debitCardService.getMovements(id))));
     }
