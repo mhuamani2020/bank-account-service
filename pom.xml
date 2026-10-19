@@ -208,6 +208,7 @@
                 <version>0.8.11</version>
                 <configuration>
                     <excludes>
+                        <exclude>com/sun/tools/**</exclude>
                         <exclude>**/dto/**</exclude>
                         <exclude>**/model/**</exclude>
                         <exclude>**/*Application*</exclude>
